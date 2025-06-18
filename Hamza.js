@@ -76,7 +76,7 @@ server {
     }
 
     console.log("🕒 Waiting for DNS propagation...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
+    await new Promise(resolve => setTimeout(resolve, 10000));
 
     try {
       execSync(`certbot --nginx --non-interactive --agree-tos -d ${domain} -m admin@${BASE_DOMAIN}`);
