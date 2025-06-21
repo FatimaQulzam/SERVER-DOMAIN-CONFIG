@@ -15,6 +15,7 @@ const ERROR_PAGE_DIR = '/var/www/errors';
 const ERROR_PAGE_PATH = path.join(ERROR_PAGE_DIR, '502.html');
 
 // ➕ CREATE Subdomain
+// ➕ CREATE Subdomain
 app.post('/create-subdomain', async (req, res) => {
   const { subdomain, port, ip } = req.body;
   if (!subdomain || !port || !ip) {
@@ -54,22 +55,56 @@ server {
     execSync('nginx -t');
     execSync('systemctl reload nginx');
 
-    const cfRes = await axios.post(
-      `https://api.cloudflare.com/client/v4/zones/${process.env.CLOUDFLARE_ZONE_ID}/dns_records`,
-      {
-        type: 'A',
-        name: domain,
-        content: ip,
-        ttl: 120,
-        proxied: false,
-      },
+    // Check if DNS already exists
+    const existingRecords = await axios.get(
+      `https://api.cloudflare.com/client/v4/zones/${process.env.CLOUDFLARE_ZONE_ID}/dns_records?name=${domain}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
-          'Content-Type': 'application/json',
         },
       }
     );
+
+    const existing = existingRecords.data.result[0];
+    let cfRes;
+
+    if (existing) {
+      // Update existing DNS record
+      cfRes = await axios.put(
+        `https://api.cloudflare.com/client/v4/zones/${process.env.CLOUDFLARE_ZONE_ID}/dns_records/${existing.id}`,
+        {
+          type: 'A',
+          name: domain,
+          content: ip,
+          ttl: 120,
+          proxied: false,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    } else {
+      // Create new DNS record
+      cfRes = await axios.post(
+        `https://api.cloudflare.com/client/v4/zones/${process.env.CLOUDFLARE_ZONE_ID}/dns_records`,
+        {
+          type: 'A',
+          name: domain,
+          content: ip,
+          ttl: 120,
+          proxied: false,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
 
     if (!cfRes.data.success) {
       return res.status(500).json({ error: 'Cloudflare DNS failed', detail: cfRes.data });
@@ -87,13 +122,14 @@ server {
     return res.json({
       status: 'success',
       domain,
-      message: 'Subdomain created, DNS added, SSL attempted',
+      message: existing ? 'Subdomain updated, DNS updated, SSL attempted' : 'Subdomain created, DNS added, SSL attempted',
     });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error', details: err.message });
   }
 });
+
 
 // 🗑 DELETE Subdomain
 app.post('/delete-subdomain', async (req, res) => {
