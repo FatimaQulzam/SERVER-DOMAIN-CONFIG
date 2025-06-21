@@ -14,7 +14,21 @@ const SITES_ENABLED = '/etc/nginx/sites-enabled';
 const ERROR_PAGE_DIR = '/var/www/errors';
 const ERROR_PAGE_PATH = path.join(ERROR_PAGE_DIR, '502.html');
 
-// ➕ CREATE Subdomain
+app.get('/error-502', (req, res) => {
+  const { port, domain } = req.query;
+
+  res.send(`
+    <html>
+      <head><title>502 Bad Gateway</title></head>
+      <body style="font-family:sans-serif; background:#1a1a1a; color:#fff; text-align:center; padding:100px;">
+        <h1>🚫 502 - Bad Gateway</h1>
+        <p>Your app <strong>${domain}</strong> is not active or not listening on port <strong>${port}</strong>.</p>
+        <p>Please make sure the app is running and listening on the correct port.</p>
+      </body>
+    </html>
+  `);
+});
+
 // ➕ CREATE Subdomain
 app.post('/create-subdomain', async (req, res) => {
   const { subdomain, port, ip } = req.body;
@@ -27,27 +41,27 @@ app.post('/create-subdomain', async (req, res) => {
   const symlinkPath = path.join(SITES_ENABLED, domain);
 
   const config = `
-server {
-    listen 80;
-    server_name ${domain};
-
-    location / {
-        proxy_pass http://${ip}:${port};
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_connect_timeout 3;
-        proxy_read_timeout 5;
-    }
-
-    error_page 502 /502.html;
-    location = /502.html {
-        root ${ERROR_PAGE_DIR};
-        internal;
-    }
-}
-`;
-
+  server {
+      listen 80;
+      server_name ${domain};
+  
+      location / {
+          proxy_pass http://${ip}:${port};
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_connect_timeout 3;
+          proxy_read_timeout 5;
+      }
+  
+      error_page 502 = @custom502;
+  
+      location @custom502 {
+          proxy_pass http://localhost:4000/error-502?port=${port}&domain=${domain};
+      }
+  }
+  `;
+  
   try {
     fs.writeFileSync(configPath, config);
     if (!fs.existsSync(symlinkPath)) fs.symlinkSync(configPath, symlinkPath);
@@ -126,6 +140,7 @@ server {
     });
   } catch (err) {
     console.error(err);
+    console.error("Cloudflare Error:", err.response?.data?.errors || err.message);
     return res.status(500).json({ error: 'Internal Server Error', details: err.message });
   }
 });
