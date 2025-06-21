@@ -15,7 +15,9 @@ const ERROR_PAGE_DIR = '/var/www/errors';
 const ERROR_PAGE_PATH = path.join(ERROR_PAGE_DIR, '502.html');
 
 app.get('/error-502', (req, res) => {
-  const { port, domain } = req.query;
+  const port = req.headers['x-app-port'] || 'unknown';
+  const domain = req.headers['x-app-domain'] || 'unknown';
+  
 
   res.send(`
     <html>
@@ -54,11 +56,14 @@ app.post('/create-subdomain', async (req, res) => {
           proxy_read_timeout 5;
       }
   
-      error_page 502 = @custom502;
-  
-      location @custom502 {
-          proxy_pass http://localhost:4000/error-502?port=${port}&domain=${domain};
-      }
+  error_page 502 = @custom502;
+
+    location @custom502 {
+        proxy_pass http://localhost:4000;
+        rewrite ^ /error-502 break;
+    proxy_set_header X-App-Port "${port}";
+    proxy_set_header X-App-Domain "${domain}";
+}
   }
   `;
   
